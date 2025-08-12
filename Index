@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Squaredle Solver משודרג</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div class="container">
+        <h1>Squaredle Solver משודרג</h1>
+
+        <label for="boardInput">הכנס אותיות רשת 4x4 (או @ למילה לא ידועה):</label>
+        <textarea id="boardInput" rows="4" cols="10" placeholder="לדוגמה:&#10;ABCD&#10;EFGH&#10;IJKL&#10;MNOP"></textarea>
+
+        <button id="solveBtn">חשב מילים</button>
+
+        <label for="prefixFilter">סינון מילים שמתחילות ב:</label>
+        <input type="text" id="prefixFilter" placeholder="הקלד אות/אותיות" />
+
+        <h2>מילים אפשריות</h2>
+        <ul id="wordList"></ul>
+
+        <h2>מילים שכבר השתמשת</h2>
+        <ul id="usedWordList"></ul>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
