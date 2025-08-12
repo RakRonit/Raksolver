@@ -1,4 +1,4 @@
-/************ אלמנטים מה-DOM ************/
+/************ קישוריות ל-DOM ************/
 const boardInput      = document.getElementById("boardInput");
 const solveBtn        = document.getElementById("solveBtn");
 const prefixFilter    = document.getElementById("prefixFilter");
@@ -12,50 +12,75 @@ const hintBox         = document.getElementById("hintBox");
 /************ פס סטטוס קטן למילון ************/
 const dictStatus = document.createElement("div");
 dictStatus.style.margin = "6px 0 0";
-dictStatus.textContent = "מילון נטען…";
+dictStatus.textContent = "טוען מילון…";
 document.querySelector(".container")?.prepend(dictStatus);
 
-/************ מצב זיכרון ************/
+/************ מצב ושמירה מקומית ************/
 let foundWords = [];
 let usedWords = JSON.parse(localStorage.getItem("usedWords") || "[]");
 function saveUsedWords() {
   localStorage.setItem("usedWords", JSON.stringify(usedWords));
 }
 
-/************ טעינת מילון חיצוני ************/
+/************ טעינת מילון גדול מהאינטרנט + קאש ************/
 let dictionary = [];
 let dictLoaded = false;
 
-// ננעל את כפתור 'חשב' עד שהמילון נטען
-solveBtn.disabled = true;
-solveBtn.style.opacity = 0.6;
+// ננעל את הכפתור בזמן הטעינה
+if (solveBtn) {
+  solveBtn.disabled = true;
+  solveBtn.style.opacity = 0.6;
+  solveBtn.textContent = "טוען…";
+  solveBtn.style.fontSize = "20px";
+  solveBtn.style.fontWeight = "bold";
+}
 
-async function loadDictionary(url = "words.txt") {
+// גרסה למילון (שינוי המספר מכריח רענון קאש אצל משתמשים)
+const DICT_VERSION = "dwyl-v1";
+const DICT_URL = "https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt";
+
+async function loadDictionaryFromRemote() {
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    // קודם ננסה מה-cache המקומי
+    const cachedV = localStorage.getItem("words_cache_v");
+    const cachedData = localStorage.getItem("words_cache_data");
+    if (cachedV === DICT_VERSION && cachedData) {
+      dictionary = JSON.parse(cachedData);
+      dictLoaded = true;
+      if (solveBtn) { solveBtn.disabled = false; solveBtn.style.opacity = 1; solveBtn.textContent = "הנה זה מגיע"; }
+      dictStatus.textContent = `המילון נטען מהקאש (${dictionary.length.toLocaleString()} מילים) — מוכן!`;
+      return;
+    }
+
+    // הורדה ראשונה / גרסה חדשה
+    dictStatus.textContent = "מוריד מילון גדול… זה יכול לקחת כמה שניות";
+    const res = await fetch(DICT_URL, { cache: "no-store" });
     if (!res.ok) throw new Error(`Dictionary fetch failed: ${res.status}`);
+
     const text = await res.text();
+    // רק אותיות לועזיות, 4+ תווים, ל-UPPERCASE
     dictionary = text
       .split(/\r?\n/)
       .map(w => w.trim())
-      .filter(w => w.length >= 4)
+      .filter(w => w.length >= 4 && /^[a-z]+$/.test(w))
       .map(w => w.toUpperCase());
-    dictLoaded = true;
 
-    // מפעילים את הכפתור ומעדכנים סטטוס
-    solveBtn.disabled = false;
-    solveBtn.style.opacity = 1;
-    dictStatus.textContent = `המילון נטען (${dictionary.length} מילים) — מוכן!`;
+    // שמירה בקאש
+    localStorage.setItem("words_cache_v", DICT_VERSION);
+    localStorage.setItem("words_cache_data", JSON.stringify(dictionary));
+
+    dictLoaded = true;
+    if (solveBtn) { solveBtn.disabled = false; solveBtn.style.opacity = 1; solveBtn.textContent = "הנה זה מגיע"; }
+    dictStatus.textContent = `המילון נטען (${dictionary.length.toLocaleString()} מילים) — מוכן!`;
   } catch (e) {
     console.error("Dictionary load error:", e);
-    dictStatus.textContent = "שגיאה בטעינת המילון. ודאי ש־words.txt קיים בשורש.";
-    alert("לא הצלחתי לטעון מילון. בדקי שהקובץ words.txt נמצא בשורש הריפו ושם הקובץ מדויק.");
+    dictStatus.textContent = "שגיאה בטעינת המילון מהאינטרנט. נסי לרענן או בדקי חיבור.";
+    alert("לא הצלחתי לטעון מילון. אם תרצי, אפשר לחזור לגירסה עם words.txt מקומי.");
   }
 }
-// נטען את המילון כשעמוד מוכן
-document.addEventListener("DOMContentLoaded", loadDictionary);
+document.addEventListener("DOMContentLoaded", loadDictionaryFromRemote);
 
-/************ עזר: המרת לוח למטריצה / רוטציות ************/
+/************ עזר: המרת לוח / רוטציות ************/
 function parseBoardToMatrix(text) {
   // תומך גם בפורמט ABCD-EFGH-IJKL-MNOP וגם ב-4 שורות
   const rows = (text.includes("-") ? text.split("-") : text.split(/\r?\n/))
@@ -63,9 +88,7 @@ function parseBoardToMatrix(text) {
     .filter(Boolean);
   return rows.map(r => r.replace(/[^A-Z@]/g, "").split(""));
 }
-function matrixToText(mat) {
-  return mat.map(row => row.join("")).join("\n");
-}
+function matrixToText(mat) { return mat.map(row => row.join("")).join("\n"); }
 function rotateMatrixRight(mat) {
   const n = mat.length, m = mat[0]?.length || 0;
   const out = Array.from({length: m}, () => Array(n).fill(""));
@@ -93,15 +116,13 @@ function buildTrie(words) {
   return root;
 }
 
-/************ DFS על שכנים (כולל אלכסון), בלי חזרה על תא ************/
+/************ DFS על שכנים (כולל אלכסונים), בלי חזרה על תא ************/
 const DIRS = [
   [-1, -1], [-1, 0], [-1, 1],
   [ 0, -1],          [ 0, 1],
   [ 1, -1], [ 1, 0], [ 1, 1],
 ];
-function inBounds(r, c, R, C) {
-  return r >= 0 && r < R && c >= 0 && c < C;
-}
+function inBounds(r, c, R, C) { return r >= 0 && r < R && c >= 0 && c < C; }
 
 function findWords(boardText) {
   const MIN_LEN = 4;
@@ -111,7 +132,7 @@ function findWords(boardText) {
   const C = R ? grid[0].length : 0;
   if (!R || !C) return [];
 
-  // בדיקת אורך אחיד לשורות
+  // בדיקת אורך אחיד לכל השורות
   for (const row of grid) if (row.length !== C) {
     alert("כל השורות צריכות להיות באותו אורך (למשל 4 תווים בכל שורה).");
     return [];
@@ -130,6 +151,7 @@ function findWords(boardText) {
 
       const ch = grid[nr][nc];
       if (ch === "@") {
+        // ג'וקר: כל ילד אפשרי
         for (const nextCh of Object.keys(node)) {
           if (nextCh === "$") continue;
           visited[nr][nc] = true;
@@ -146,7 +168,7 @@ function findWords(boardText) {
     }
   }
 
-  // התחלת DFS מכל תא (כולל @ כפתח)
+  // התחלה מכל תא (כולל @ כפתח)
   for (let r = 0; r < R; r++) {
     for (let c = 0; c < C; c++) {
       visited[r][c] = true;
@@ -169,7 +191,7 @@ function findWords(boardText) {
 
 /************ UI: סינון, סימון, רענון רשימות ************/
 function renderWordLists() {
-  const prefix = (prefixFilter.value || "").trim().toUpperCase();
+  const prefix = (prefixFilter?.value || "").trim().toUpperCase();
   const filtered = foundWords.filter(w => !usedWords.includes(w) && w.startsWith(prefix));
 
   // רשימת מילים זמינות
@@ -211,7 +233,7 @@ function renderWordLists() {
 }
 
 /************ מאזינים ************/
-solveBtn.onclick = () => {
+solveBtn && (solveBtn.onclick = () => {
   if (!dictLoaded) {
     dictStatus.textContent = "המילון עדיין נטען… נסי שוב בעוד רגע.";
     return;
@@ -223,9 +245,9 @@ solveBtn.onclick = () => {
   }
   foundWords = findWords(boardText);
   renderWordLists();
-};
+});
 
-prefixFilter.oninput = renderWordLists;
+prefixFilter && (prefixFilter.oninput = renderWordLists);
 
 rotateRightBtn && (rotateRightBtn.onclick = () => {
   if (!boardInput.value.trim()) return;
