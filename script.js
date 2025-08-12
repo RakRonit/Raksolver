@@ -9,6 +9,12 @@ const rotateRightBtn  = document.getElementById("rotateRightBtn");
 const hintBtn         = document.getElementById("hintBtn");
 const hintBox         = document.getElementById("hintBox");
 
+/************ פס סטטוס קטן למילון ************/
+const dictStatus = document.createElement("div");
+dictStatus.style.margin = "6px 0 0";
+dictStatus.textContent = "מילון נטען…";
+document.querySelector(".container")?.prepend(dictStatus);
+
 /************ מצב זיכרון ************/
 let foundWords = [];
 let usedWords = JSON.parse(localStorage.getItem("usedWords") || "[]");
@@ -20,6 +26,10 @@ function saveUsedWords() {
 let dictionary = [];
 let dictLoaded = false;
 
+// ננעל את כפתור 'חשב' עד שהמילון נטען
+solveBtn.disabled = true;
+solveBtn.style.opacity = 0.6;
+
 async function loadDictionary(url = "words.txt") {
   try {
     const res = await fetch(url, { cache: "no-store" });
@@ -28,19 +38,26 @@ async function loadDictionary(url = "words.txt") {
     dictionary = text
       .split(/\r?\n/)
       .map(w => w.trim())
-      .filter(w => w.length >= 4)     // רק 4+ אותיות
-      .map(w => w.toUpperCase());     // הכל לאותיות גדולות
+      .filter(w => w.length >= 4)
+      .map(w => w.toUpperCase());
     dictLoaded = true;
+
+    // מפעילים את הכפתור ומעדכנים סטטוס
+    solveBtn.disabled = false;
+    solveBtn.style.opacity = 1;
+    dictStatus.textContent = `המילון נטען (${dictionary.length} מילים) — מוכן!`;
   } catch (e) {
-    console.error(e);
-    alert("לא הצלחתי לטעון מילון. ודאי שקיים קובץ words.txt בריפו.");
+    console.error("Dictionary load error:", e);
+    dictStatus.textContent = "שגיאה בטעינת המילון. ודאי ש־words.txt קיים בשורש.";
+    alert("לא הצלחתי לטעון מילון. בדקי שהקובץ words.txt נמצא בשורש הריפו ושם הקובץ מדויק.");
   }
 }
-loadDictionary();
+// נטען את המילון כשעמוד מוכן
+document.addEventListener("DOMContentLoaded", loadDictionary);
 
 /************ עזר: המרת לוח למטריצה / רוטציות ************/
 function parseBoardToMatrix(text) {
-  // תומך גם בפורמט עם מקפים ABCD-EFGH-IJKL-MNOP וגם ב-4 שורות
+  // תומך גם בפורמט ABCD-EFGH-IJKL-MNOP וגם ב-4 שורות
   const rows = (text.includes("-") ? text.split("-") : text.split(/\r?\n/))
     .map(r => r.trim().toUpperCase())
     .filter(Boolean);
@@ -113,7 +130,6 @@ function findWords(boardText) {
 
       const ch = grid[nr][nc];
       if (ch === "@") {
-        // ג'וקר: ננסה כל ילד אפשרי
         for (const nextCh of Object.keys(node)) {
           if (nextCh === "$") continue;
           visited[nr][nc] = true;
@@ -130,7 +146,7 @@ function findWords(boardText) {
     }
   }
 
-  // התחלת DFS מכל תא (תומך גם ב-@ כפתח)
+  // התחלת DFS מכל תא (כולל @ כפתח)
   for (let r = 0; r < R; r++) {
     for (let c = 0; c < C; c++) {
       visited[r][c] = true;
@@ -182,12 +198,12 @@ function renderWordLists() {
     li.classList.add("used");
 
     const btn = document.createElement("button");
-      btn.textContent = "בטל סימון";
-      btn.onclick = () => {
-        usedWords = usedWords.filter(w => w !== word);
-        saveUsedWords();
-        renderWordLists();
-      };
+    btn.textContent = "בטל סימון";
+    btn.onclick = () => {
+      usedWords = usedWords.filter(w => w !== word);
+      saveUsedWords();
+      renderWordLists();
+    };
 
     li.appendChild(btn);
     usedWordList.appendChild(li);
@@ -196,8 +212,8 @@ function renderWordLists() {
 
 /************ מאזינים ************/
 solveBtn.onclick = () => {
-  if (!dictLoaded || !dictionary.length) {
-    alert("המילון עדיין נטען. נסי שוב בעוד כמה שניות או בדקי שהקובץ words.txt קיים.");
+  if (!dictLoaded) {
+    dictStatus.textContent = "המילון עדיין נטען… נסי שוב בעוד רגע.";
     return;
   }
   const boardText = boardInput.value;
@@ -215,7 +231,6 @@ rotateRightBtn && (rotateRightBtn.onclick = () => {
   if (!boardInput.value.trim()) return;
   const mat = parseBoardToMatrix(boardInput.value);
   boardInput.value = matrixToText(rotateMatrixRight(mat));
-  // אפשר ישירות לחשב מחדש
   if (dictLoaded) { foundWords = findWords(boardInput.value); renderWordLists(); }
 });
 
@@ -232,7 +247,6 @@ hintBtn && (hintBtn.onclick = () => {
     hintBox && (hintBox.textContent = "אין מילים חדשות לרמוז כרגע 😊");
     return;
   }
-  // בחרי ארוכה (יותר מועיל), אפשר גם אקראי
   const pick = [...candidates].sort((a,b) => b.length - a.length)[0];
   const prefixLen = Math.min(2, Math.max(1, pick.length - 1));
   hintBox && (hintBox.textContent = `רמז: המילה מתחילה ב־ "${pick.slice(0, prefixLen)}" (${pick.length} אותיות).`);
