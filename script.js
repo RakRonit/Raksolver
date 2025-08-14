@@ -15,18 +15,10 @@ dictStatus.style.margin = "6px 0 0";
 dictStatus.textContent = "טוען מילון…";
 document.querySelector(".container")?.prepend(dictStatus);
 
-/************ מצב ושמירה מקומית ************/
-let foundWords = [];
-let usedWords = JSON.parse(localStorage.getItem("usedWords") || "[]");
-function saveUsedWords() {
-  localStorage.setItem("usedWords", JSON.stringify(usedWords));
-}
-
-/************ טעינת מילון גדול מהאינטרנט + קאש ************/
+/************ מילון גדול מהאינטרנט + קאש ************/
 let dictionary = [];
 let dictLoaded = false;
 
-// ננעל את הכפתור בזמן הטעינה
 if (solveBtn) {
   solveBtn.disabled = true;
   solveBtn.style.opacity = 0.6;
@@ -35,37 +27,32 @@ if (solveBtn) {
   solveBtn.style.fontWeight = "bold";
 }
 
-// גרסה למילון (שינוי המספר יכריח רענון קאש)
 const DICT_VERSION = "dwyl-v1";
 const DICT_URL = "https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt";
 
 async function loadDictionaryFromRemote() {
   try {
-    // קודם ננסה מה-cache המקומי
     const cachedV = localStorage.getItem("words_cache_v");
     const cachedData = localStorage.getItem("words_cache_data");
     if (cachedV === DICT_VERSION && cachedData) {
-      dictionary = JSON.parse(cachedData);
+      dictionary = JSON.parse(cachedData).map(w => w.toUpperCase());
       dictLoaded = true;
       if (solveBtn) { solveBtn.disabled = false; solveBtn.style.opacity = 1; solveBtn.textContent = "קדימה!"; }
       dictStatus.textContent = `המילון נטען מהקאש (${dictionary.length.toLocaleString()} מילים) — מוכן!`;
       return;
     }
 
-    // הורדה ראשונה / גרסה חדשה
     dictStatus.textContent = "מוריד מילון גדול… זה יכול לקחת כמה שניות";
     const res = await fetch(DICT_URL, { cache: "no-store" });
     if (!res.ok) throw new Error(`Dictionary fetch failed: ${res.status}`);
 
     const text = await res.text();
-    // רק אותיות a-z, 4+ תווים, ל-UPPERCASE
     dictionary = text
       .split(/\r?\n/)
       .map(w => w.trim())
       .filter(w => w.length >= 4 && /^[a-z]+$/.test(w))
       .map(w => w.toUpperCase());
 
-    // שמירה לקאש
     localStorage.setItem("words_cache_v", DICT_VERSION);
     localStorage.setItem("words_cache_data", JSON.stringify(dictionary));
 
@@ -75,14 +62,13 @@ async function loadDictionaryFromRemote() {
   } catch (e) {
     console.error("Dictionary load error:", e);
     dictStatus.textContent = "שגיאה בטעינת המילון מהאינטרנט. נסי לרענן או בדקי חיבור.";
-    alert("לא הצלחתי לטעון מילון. אם תרצי, אפשר לחזור לגרסא עם words.txt מקומי.");
+    alert("לא הצלחתי לטעון מילון.");
   }
 }
 document.addEventListener("DOMContentLoaded", loadDictionaryFromRemote);
 
-/************ עזר: המרת לוח / רוטציות ************/
+/************ עזר: לוח/רוטציות/חתימה ************/
 function parseBoardToMatrix(text) {
-  // תומך גם בפורמט ABCD-EFGH-IJKL-MNOP וגם ב-4 שורות
   const rows = (text.includes("-") ? text.split("-") : text.split(/\r?\n/))
     .map(r => r.trim().toUpperCase())
     .filter(Boolean);
@@ -101,38 +87,40 @@ function rotateMatrixLeft(mat) {
   for (let i=0;i<n;i++) for (let j=0;j<m;j++) out[m-1-j][i] = mat[i][j];
   return out;
 }
-
-/************ זיהוי "חידה חדשה" (איפוס used לא ברוטציה) ************/
-function gridsEqual(a, b) {
-  if (!a || !b) return false;
-  if (a.length !== b.length || a[0].length !== b[0].length) return false;
-  for (let i = 0; i < a.length; i++) {
-    for (let j = 0; j < a[0].length; j++) {
-      if (a[i][j] !== b[i][j]) return false;
-    }
-  }
-  return true;
-}
-function equalUpToRotation(curr, prev) {
-  if (!prev) return false;
-  if (gridsEqual(curr, prev)) return true;
-  let r1 = rotateMatrixRight(prev);
-  if (gridsEqual(curr, r1)) return true;
-  let r2 = rotateMatrixRight(r1);
-  if (gridsEqual(curr, r2)) return true;
-  let r3 = rotateMatrixRight(r2);
-  if (gridsEqual(curr, r3)) return true;
-  return false;
-}
-function loadLastBoard() {
-  const raw = localStorage.getItem("lastBoardMatrix");
-  return raw ? JSON.parse(raw) : null;
-}
-function saveLastBoard(mat) {
-  localStorage.setItem("lastBoardMatrix", JSON.stringify(mat));
+/* חתימת חידה חסינה לרוטציה: נבנה את 4 הרוטציות וניקח את המחרוזת הקטנה ביותר */
+function boardSignature(mat) {
+  if (!mat || !mat.length) return "";
+  const asString = m => m.map(r => r.join("")).join("|");
+  const r1 = rotateMatrixRight(mat);
+  const r2 = rotateMatrixRight(r1);
+  const r3 = rotateMatrixRight(r2);
+  const candidates = [mat, r1, r2, r3].map(asString);
+  candidates.sort();
+  return candidates[0]; // הקטנה ביותר לקנוניזציה
 }
 
-/************ Trie לביצועים ************/
+/************ אחסון "כבר השתמשתי" פר-חידה ************/
+function getUsedMap() {
+  try { return JSON.parse(localStorage.getItem("usedWordsByBoard") || "{}"); }
+  catch { return {}; }
+}
+function setUsedMap(map) {
+  localStorage.setItem("usedWordsByBoard", JSON.stringify(map));
+}
+let currentSignature = "";       // חתימת החידה הנוכחית
+let usedWords = [];              // הרשימה עבור החתימה הנוכחית בלבד
+
+function loadUsedForSignature(sig) {
+  const map = getUsedMap();
+  usedWords = map[sig] || [];
+}
+function saveUsedForSignature(sig) {
+  const map = getUsedMap();
+  map[sig] = usedWords;
+  setUsedMap(map);
+}
+
+/************ Trie ************/
 function buildTrie(words) {
   const root = {};
   for (const w of words) {
@@ -141,12 +129,12 @@ function buildTrie(words) {
       node[ch] = node[ch] || {};
       node = node[ch];
     }
-    node.$ = true; // סוף מילה
+    node.$ = true;
   }
   return root;
 }
 
-/************ DFS על שכנים (כולל אלכסון), בלי חזרה על תא ************/
+/************ DFS שכנים + @ ג'וקר ************/
 const DIRS = [
   [-1, -1], [-1, 0], [-1, 1],
   [ 0, -1],          [ 0, 1],
@@ -162,7 +150,6 @@ function findWords(boardText) {
   const C = R ? grid[0].length : 0;
   if (!R || !C) return [];
 
-  // בדיקת אורך אחיד לכל השורות
   for (const row of grid) if (row.length !== C) {
     alert("כל השורות צריכות להיות באותו אורך (למשל 4 תווים בכל שורה).");
     return [];
@@ -181,7 +168,6 @@ function findWords(boardText) {
 
       const ch = grid[nr][nc];
       if (ch === "@") {
-        // ג'וקר: כל ילד אפשרי
         for (const nextCh of Object.keys(node)) {
           if (nextCh === "$") continue;
           visited[nr][nc] = true;
@@ -198,7 +184,6 @@ function findWords(boardText) {
     }
   }
 
-  // התחלה מכל תא (כולל @ כפתח)
   for (let r = 0; r < R; r++) {
     for (let c = 0; c < C; c++) {
       visited[r][c] = true;
@@ -224,7 +209,6 @@ function renderWordLists() {
   const prefix = (prefixFilter?.value || "").trim().toUpperCase();
   const filtered = foundWords.filter(w => !usedWords.includes(w) && w.startsWith(prefix));
 
-  // רשימת מילים זמינות
   wordList.innerHTML = "";
   filtered.forEach(word => {
     const li = document.createElement("li");
@@ -234,7 +218,7 @@ function renderWordLists() {
     btn.textContent = "סמן/הסר";
     btn.onclick = () => {
       usedWords.push(word);
-      saveUsedWords();
+      saveUsedForSignature(currentSignature);
       renderWordLists();
     };
 
@@ -242,7 +226,6 @@ function renderWordLists() {
     wordList.appendChild(li);
   });
 
-  // רשימת מילים שסומנו
   usedWordList.innerHTML = "";
   usedWords.forEach(word => {
     const li = document.createElement("li");
@@ -253,7 +236,7 @@ function renderWordLists() {
     btn.textContent = "בטל סימון";
     btn.onclick = () => {
       usedWords = usedWords.filter(w => w !== word);
-      saveUsedWords();
+      saveUsedForSignature(currentSignature);
       renderWordLists();
     };
 
@@ -274,16 +257,12 @@ solveBtn && (solveBtn.onclick = () => {
     return;
   }
 
-  // זיהוי חידה חדשה (איפוס used), אבל לא אם זו רק רוטציה
-  const currentMat = parseBoardToMatrix(boardText);
-  const prevMat = loadLastBoard();
-  const samePuzzleByRotation = prevMat && equalUpToRotation(currentMat, prevMat);
+  // חתימת החידה (בלתי תלויה ברוטציה)
+  const mat = parseBoardToMatrix(boardText);
+  currentSignature = boardSignature(mat);
 
-  if (!samePuzzleByRotation) {
-    usedWords = [];
-    saveUsedWords();
-    saveLastBoard(currentMat);
-  }
+  // טוענים / מאפסים רשימת 'כבר השתמשתי' בהתאם לחידה הנוכחית
+  loadUsedForSignature(currentSignature);
 
   foundWords = findWords(boardText);
   renderWordLists();
@@ -295,6 +274,7 @@ rotateRightBtn && (rotateRightBtn.onclick = () => {
   if (!boardInput.value.trim()) return;
   const mat = parseBoardToMatrix(boardInput.value);
   boardInput.value = matrixToText(rotateMatrixRight(mat));
+  // רוטציה לא משנה חתימה — כך ש-used יישאר
   if (dictLoaded) { foundWords = findWords(boardInput.value); renderWordLists(); }
 });
 
@@ -317,4 +297,13 @@ hintBtn && (hintBtn.onclick = () => {
 });
 
 /************ רענון ראשוני ************/
-renderWordLists();
+(function initUsedOnLoad() {
+  // אם יש לוח כבר כתוב כשנטען העמוד – נטען חתימה מתאימה
+  const text = (boardInput?.value || "").trim();
+  if (text) {
+    const mat = parseBoardToMatrix(text);
+    currentSignature = boardSignature(mat);
+    loadUsedForSignature(currentSignature);
+  }
+  renderWordLists();
+})();
