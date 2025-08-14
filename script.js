@@ -9,7 +9,7 @@ const rotateRightBtn  = document.getElementById("rotateRightBtn");
 const hintBtn         = document.getElementById("hintBtn");
 const hintBox         = document.getElementById("hintBox");
 
-/************ פס סטטוס קטן למילון ************/
+/************ פס סטטוס קטן ************/
 const dictStatus = document.createElement("div");
 dictStatus.style.margin = "6px 0 0";
 dictStatus.textContent = "טוען מילון…";
@@ -35,7 +35,7 @@ if (solveBtn) {
   solveBtn.style.fontWeight = "bold";
 }
 
-// גרסה למילון (שינוי המספר מכריח רענון קאש אצל משתמשים)
+// גרסה למילון (שינוי המספר יכריח רענון קאש)
 const DICT_VERSION = "dwyl-v1";
 const DICT_URL = "https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt";
 
@@ -47,7 +47,7 @@ async function loadDictionaryFromRemote() {
     if (cachedV === DICT_VERSION && cachedData) {
       dictionary = JSON.parse(cachedData);
       dictLoaded = true;
-      if (solveBtn) { solveBtn.disabled = false; solveBtn.style.opacity = 1; solveBtn.textContent = "הנה זה מגיע"; }
+      if (solveBtn) { solveBtn.disabled = false; solveBtn.style.opacity = 1; solveBtn.textContent = "קדימה!"; }
       dictStatus.textContent = `המילון נטען מהקאש (${dictionary.length.toLocaleString()} מילים) — מוכן!`;
       return;
     }
@@ -58,24 +58,24 @@ async function loadDictionaryFromRemote() {
     if (!res.ok) throw new Error(`Dictionary fetch failed: ${res.status}`);
 
     const text = await res.text();
-    // רק אותיות לועזיות, 4+ תווים, ל-UPPERCASE
+    // רק אותיות a-z, 4+ תווים, ל-UPPERCASE
     dictionary = text
       .split(/\r?\n/)
       .map(w => w.trim())
       .filter(w => w.length >= 4 && /^[a-z]+$/.test(w))
       .map(w => w.toUpperCase());
 
-    // שמירה בקאש
+    // שמירה לקאש
     localStorage.setItem("words_cache_v", DICT_VERSION);
     localStorage.setItem("words_cache_data", JSON.stringify(dictionary));
 
     dictLoaded = true;
-    if (solveBtn) { solveBtn.disabled = false; solveBtn.style.opacity = 1; solveBtn.textContent = "הנה זה מגיע"; }
+    if (solveBtn) { solveBtn.disabled = false; solveBtn.style.opacity = 1; solveBtn.textContent = "קדימה!"; }
     dictStatus.textContent = `המילון נטען (${dictionary.length.toLocaleString()} מילים) — מוכן!`;
   } catch (e) {
     console.error("Dictionary load error:", e);
     dictStatus.textContent = "שגיאה בטעינת המילון מהאינטרנט. נסי לרענן או בדקי חיבור.";
-    alert("לא הצלחתי לטעון מילון. אם תרצי, אפשר לחזור לגירסה עם words.txt מקומי.");
+    alert("לא הצלחתי לטעון מילון. אם תרצי, אפשר לחזור לגרסא עם words.txt מקומי.");
   }
 }
 document.addEventListener("DOMContentLoaded", loadDictionaryFromRemote);
@@ -102,6 +102,36 @@ function rotateMatrixLeft(mat) {
   return out;
 }
 
+/************ זיהוי "חידה חדשה" (איפוס used לא ברוטציה) ************/
+function gridsEqual(a, b) {
+  if (!a || !b) return false;
+  if (a.length !== b.length || a[0].length !== b[0].length) return false;
+  for (let i = 0; i < a.length; i++) {
+    for (let j = 0; j < a[0].length; j++) {
+      if (a[i][j] !== b[i][j]) return false;
+    }
+  }
+  return true;
+}
+function equalUpToRotation(curr, prev) {
+  if (!prev) return false;
+  if (gridsEqual(curr, prev)) return true;
+  let r1 = rotateMatrixRight(prev);
+  if (gridsEqual(curr, r1)) return true;
+  let r2 = rotateMatrixRight(r1);
+  if (gridsEqual(curr, r2)) return true;
+  let r3 = rotateMatrixRight(r2);
+  if (gridsEqual(curr, r3)) return true;
+  return false;
+}
+function loadLastBoard() {
+  const raw = localStorage.getItem("lastBoardMatrix");
+  return raw ? JSON.parse(raw) : null;
+}
+function saveLastBoard(mat) {
+  localStorage.setItem("lastBoardMatrix", JSON.stringify(mat));
+}
+
 /************ Trie לביצועים ************/
 function buildTrie(words) {
   const root = {};
@@ -116,7 +146,7 @@ function buildTrie(words) {
   return root;
 }
 
-/************ DFS על שכנים (כולל אלכסונים), בלי חזרה על תא ************/
+/************ DFS על שכנים (כולל אלכסון), בלי חזרה על תא ************/
 const DIRS = [
   [-1, -1], [-1, 0], [-1, 1],
   [ 0, -1],          [ 0, 1],
@@ -243,6 +273,18 @@ solveBtn && (solveBtn.onclick = () => {
     alert("אנא הזיני את הלוח");
     return;
   }
+
+  // זיהוי חידה חדשה (איפוס used), אבל לא אם זו רק רוטציה
+  const currentMat = parseBoardToMatrix(boardText);
+  const prevMat = loadLastBoard();
+  const samePuzzleByRotation = prevMat && equalUpToRotation(currentMat, prevMat);
+
+  if (!samePuzzleByRotation) {
+    usedWords = [];
+    saveUsedWords();
+    saveLastBoard(currentMat);
+  }
+
   foundWords = findWords(boardText);
   renderWordLists();
 });
